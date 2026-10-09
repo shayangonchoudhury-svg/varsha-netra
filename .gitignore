@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.aws-sam/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+
+bedrock-test.json
+bedrock-test-output.json

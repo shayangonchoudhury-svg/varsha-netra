@@ -1,0 +1,6 @@
+{
+  "name": "Varshaনেত্র",
+  "description": "Rain-to-Reserve Intelligence System for institutional campuses. See the rain. Shape the outcome.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

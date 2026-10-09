@@ -1,0 +1,9 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "varsha-netra-prod"
+resolve_s3 = true
+region = "ap-south-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "AllowedOrigin=* BedrockEnabled=true BedrockModelId=apac.anthropic.claude-3-5-sonnet-20240620-v1:0"

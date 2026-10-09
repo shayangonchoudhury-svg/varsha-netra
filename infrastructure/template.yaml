@@ -1,0 +1,272 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Varshaনেত্র (VarshaNetra) — Rain-to-Reserve Intelligence System
+  Serverless backend for institutional hydrological digital twin simulations,
+  deterministic flood risk mitigation, and Amazon Bedrock operational explanations.
+
+Globals:
+  Function:
+    Timeout: 15
+    MemorySize: 512
+    Runtime: nodejs20.x
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        NODE_OPTIONS: '--enable-source-maps'
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1'
+        APP_REGION: !Ref AWS::Region
+        ALLOWED_ORIGIN: !Ref AllowedOrigin
+        DYNAMODB_SIMULATION_TABLE: !Ref SimulationRunsTable
+        DYNAMODB_ZONES_TABLE: !Ref ZonesTable
+        DYNAMODB_ACTION_PLANS_TABLE: !Ref ActionPlansTable
+        BEDROCK_ENABLED: !Ref BedrockEnabled
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+
+Parameters:
+  AllowedOrigin:
+    Type: String
+    Default: '*'
+    Description: Allowed CORS origin for the API (e.g. your deployed AWS Amplify domain in production)
+
+  BedrockEnabled:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable Amazon Bedrock generative natural language explanation layer
+
+  BedrockModelId:
+    Type: String
+    Default: 'anthropic.claude-3-5-sonnet-20241022-v2:0'
+    Description: Bedrock Foundation Model or inference profile ID for plain-language operational summaries
+
+Resources:
+
+  # ==========================================
+  # 1. API GATEWAY (REST API)
+  # ==========================================
+
+  VarshaNetraApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: !Sub "'${AllowedOrigin}'"
+        MaxAge: "'600'"
+
+  # ==========================================
+  # 2. DYNAMODB TABLES (ON-DEMAND CAPACITY)
+  # ==========================================
+
+  SimulationRunsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: VarshaNetra_SimulationRuns
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: simulationId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: simulationId
+          KeyType: HASH
+        - AttributeName: createdAt
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: VarshaNetra
+        - Key: Environment
+          Value: Production
+
+  ZonesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: VarshaNetra_Zones
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: zoneId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: zoneId
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: VarshaNetra
+
+  ActionPlansTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: VarshaNetra_ActionPlans
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: actionPlanId
+          AttributeType: S
+        - AttributeName: simulationId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: actionPlanId
+          KeyType: HASH
+        - AttributeName: simulationId
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: VarshaNetra
+
+  # ==========================================
+  # 3. LAMBDA FUNCTIONS & LEAST-PRIVILEGE IAM
+  # ==========================================
+
+  # Lambda 1: Health Check Endpoint
+
+  HealthCheckFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: backend/lambda/health/handler.handler
+      Description: Health check probe for API Gateway uptime verification
+      Events:
+        HealthApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VarshaNetraApi
+            Path: /health
+            Method: GET
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - backend/lambda/health/handler.ts
+
+  # Lambda 2: Storm Simulator Engine (Deterministic)
+
+  SimulateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: backend/lambda/simulate/handler.handler
+      Description: Deterministic hydrology simulator executing Rational Method and mass balance
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SimulationRunsTable
+
+        - DynamoDBWritePolicy:
+            TableName: !Ref ActionPlansTable
+
+      Events:
+        SimulateApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VarshaNetraApi
+            Path: /simulate
+            Method: POST
+
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - backend/lambda/simulate/handler.ts
+
+  # Lambda 3: Campus Digital Twin Zones
+
+  ZonesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: backend/lambda/zones/handler.handler
+      Description: Retrieves bounded campus topological zones and digital twin parameters
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ZonesTable
+
+      Events:
+        ZonesApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VarshaNetraApi
+            Path: /zones
+            Method: GET
+
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - backend/lambda/zones/handler.ts
+
+  # Lambda 4: Bedrock Natural Language Explanation Layer
+
+  ExplainFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: backend/lambda/explain/handler.handler
+      Description: Explains validated deterministic results via Amazon Bedrock without calculating numbers
+
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+                - bedrock:GetInferenceProfile
+                - bedrock:GetFoundationModel
+              Resource:
+                # APAC Claude 3.5 Sonnet inference profile
+                - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}
+
+                # Foundation models used by the APAC inference profile
+                - arn:aws:bedrock:ap-south-1::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
+                - arn:aws:bedrock:ap-northeast-1::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
+                - arn:aws:bedrock:ap-northeast-2::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
+                - arn:aws:bedrock:ap-southeast-1::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
+                - arn:aws:bedrock:ap-southeast-2::foundation-model/anthropic.claude-3-5-sonnet-20240620-v1:0
+
+      Events:
+        ExplainApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VarshaNetraApi
+            Path: /explain
+            Method: POST
+
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - backend/lambda/explain/handler.ts
+
+Outputs:
+
+  ApiGatewayEndpoint:
+    Description: Production API Gateway base URL to configure in VITE_API_BASE_URL
+    Value: !Sub 'https://${VarshaNetraApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: VarshaNetraApiEndpoint
+
+  SimulationRunsTableName:
+    Description: DynamoDB Table for Simulation Runs
+    Value: !Ref SimulationRunsTable
+
+  ActionPlansTableName:
+    Description: DynamoDB Table for Action Plans
+    Value: !Ref ActionPlansTable
