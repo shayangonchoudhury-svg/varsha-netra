@@ -170,22 +170,41 @@ export class VarshaNetraApiClient {
 
   private localExplain(request: ExplanationRequest): ExplanationResponse {
     const sim = request.simulation;
+    const comparison = request.comparison;
+
     const highRisk = sim.zones.filter((z) => z.riskLevel === 'HIGH');
     const mediumRisk = sim.zones.filter((z) => z.riskLevel === 'MEDIUM');
 
+    const excessReductionPct = comparison?.impact.excessReductionPct;
+
+    const floodImpactSummary =
+      typeof excessReductionPct === 'number'
+        ? `The modeled excess-runoff reduction relative to the baseline is ${excessReductionPct}%.`
+        : 'A baseline comparison was not provided, so excess-runoff reduction cannot be reported.';
+
+    const waterSupplyDays = (
+      (sim.totalCapturedM3 * 1000) / 120000
+    ).toFixed(1);
+
     return {
-      executiveSummary: `Under the modeled ${sim.params.rainfallMm} mm storm (${sim.params.durationHours}h), KIIT Campus yields ${sim.totalRunoffM3.toLocaleString()} m³ runoff. Targeted interventions capture ${sim.totalCapturedM3.toLocaleString()} m³ (${sim.captureEfficiencyPct}% efficiency), creating ${(sim.totalCapturedM3 * 1000 / 120000).toFixed(1)} days of non-potable campus utility supply and achieving ${sim.floodReductionPct}% flood reduction.`,
+      executiveSummary: `Under the modeled ${sim.params.rainfallMm} mm storm (${sim.params.durationHours}h), KIIT Campus produces ${sim.totalRunoffM3.toLocaleString()} m³ of runoff. The simulation captures ${sim.totalCapturedM3.toLocaleString()} m³ of water (${sim.captureEfficiencyPct}% capture efficiency), equivalent to approximately ${waterSupplyDays} days of non-potable campus utility supply under the assumed 120,000-litre daily demand. ${floodImpactSummary}`,
+
       highRiskCausality: sim.zones.map((z) => ({
         zoneName: `${z.zoneCode} · ${z.zoneName}`,
         riskLevel: z.riskLevel,
-        explanation: z.riskLevel === 'HIGH'
-          ? `Zone ${z.zoneCode} suffers acute drainage stress (${z.drainageStressRatio.toFixed(2)}x) with ${z.excessOverflowM3.toFixed(1)} m³ standing excess.`
-          : `Zone ${z.zoneCode} maintains adequate drainage throughput under the ${sim.params.rainfallMm}mm event.`,
+        explanation:
+          z.riskLevel === 'HIGH'
+            ? `Zone ${z.zoneCode} has elevated modeled drainage stress (${z.drainageStressRatio.toFixed(2)}x) and ${z.excessOverflowM3.toFixed(1)} m³ of modeled excess overflow.`
+            : `Zone ${z.zoneCode} maintains adequate modeled drainage throughput under the ${sim.params.rainfallMm} mm event.`,
       })),
-      interventionBenefits: `Resilience upgrades (+${Math.round((sim.params.storageCapacityMultiplier - 1) * 100)}% tankage, +${sim.params.captureUpgradePercent}% infiltration) eliminate standing flood ponding across ${highRisk.length} critical zones.`,
-      actionPrioritiesSummary: highRisk.length > 0
-        ? `Deploy P1 submersible sumps at ${highRisk.map((z) => z.zoneCode).join(', ')} and open P2 diversion swales at ${mediumRisk.map((z) => z.zoneCode).join(', ')}.`
-        : `All zones stable. Maintain standard silt trap clearance.`,
+
+      interventionBenefits: `Configured intervention settings: storage capacity multiplier ${sim.params.storageCapacityMultiplier}x and capture upgrade ${sim.params.captureUpgradePercent}%. ${highRisk.length} zones remain classified as HIGH risk in this scenario. These settings alone do not establish that flooding has been eliminated.`,
+
+      actionPrioritiesSummary:
+        highRisk.length > 0
+          ? `Prioritize further assessment of high-risk zones: ${highRisk.map((z) => z.zoneCode).join(', ')}. Review drainage and overflow conditions before selecting mitigation measures.${mediumRisk.length > 0 ? ` Also assess medium-risk zones: ${mediumRisk.map((z) => z.zoneCode).join(', ')}.` : ''}`
+          : `No zones are classified as HIGH risk in this modeled scenario. Maintain drainage inspections and standard silt-trap clearance.`,
+
       modelTimestamp: new Date().toISOString(),
       generatedBy: 'Local Fallback Engine',
     };

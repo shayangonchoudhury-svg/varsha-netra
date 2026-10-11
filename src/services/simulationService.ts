@@ -1,3 +1,4 @@
+
 import { KIIT_CAMPUS_ZONES, BASELINE_RAIN_EVENT, PRESET_RAIN_SCENARIOS } from '../data/kiitCampusData';
 import {
   CampusZone,
@@ -94,7 +95,10 @@ export class HydrologyService {
     return simulation;
   }
 
-  public compareWithBaseline(params: ScenarioParams, scenarioName = 'Simulated Scenario'): ScenarioComparison {
+  public compareWithBaseline(
+    params: ScenarioParams,
+    scenarioName = 'Simulated Scenario'
+  ): ScenarioComparison {
     const { comparison } = executeHydrologySimulation(
       this.zones,
       {
@@ -111,6 +115,7 @@ export class HydrologyService {
       },
       scenarioName
     );
+
     return comparison;
   }
 
@@ -118,10 +123,18 @@ export class HydrologyService {
     return generateActionPlan(simulation, this.zones);
   }
 
-  public async explainWithBedrock(simulation: SimulationResult): Promise<ExplanationResponse> {
+  public async explainWithBedrock(
+    simulation: SimulationResult
+  ): Promise<ExplanationResponse> {
+    const comparison = this.compareWithBaseline(
+      simulation.params,
+      simulation.scenarioName
+    );
+
     return apiClient.explainSimulation({
       simulation,
       zones: this.zones,
+      comparison,
       intervention: {
         storageCapacityMultiplier: simulation.params.storageCapacityMultiplier,
         captureUpgradePercent: simulation.params.captureUpgradePercent,

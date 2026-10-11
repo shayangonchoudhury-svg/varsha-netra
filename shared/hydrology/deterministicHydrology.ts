@@ -330,6 +330,10 @@ export function executeHydrologySimulation(
   // Comparison & Impact
   const comparison = buildScenarioComparison(baselineResult, interventionResult);
 
+  // This legacy field represents modeled excess-runoff reduction,
+  // not capture efficiency.
+  interventionResult.floodReductionPct = comparison.impact.excessReductionPct;
+
   return {
     simulation: interventionResult,
     comparison,
@@ -379,9 +383,9 @@ function aggregateSimulation(
     overallRisk = 'MEDIUM';
   }
 
-  const floodReductionPct = totalRunoffM3 > 0
-    ? Math.round(((totalCapturedM3) / totalRunoffM3) * 100)
-    : 0;
+
+const floodReductionPct = 0; // Requires a baseline comparison; capture efficiency is reported separately.
+
 
   return {
     id: `sim-${Date.now()}`,

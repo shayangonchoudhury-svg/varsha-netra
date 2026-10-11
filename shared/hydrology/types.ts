@@ -222,6 +222,7 @@ export interface ScenarioComparison {
 export interface ExplanationRequest {
   simulation: SimulationResult;
   zones: CampusZone[];
+  comparison?: ScenarioComparison;
   intervention?: InterventionPlan;
 }
 
